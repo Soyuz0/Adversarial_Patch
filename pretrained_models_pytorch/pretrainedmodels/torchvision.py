@@ -16,7 +16,7 @@ model_urls = {
     'densenet121': 'https://download.pytorch.org/models/densenet121-241335ed.pth',
     'densenet169': 'https://download.pytorch.org/models/densenet169-6f0f7f60.pth',
     'densenet201': 'https://download.pytorch.org/models/densenet201-4c113574.pth',
-    'densenet161': 'https://download.pytorch.org/models/densenet161-17b70270.pth',   
+    'densenet161': 'https://download.pytorch.org/models/densenet161-17b70270.pth',
     'inceptionv3': 'https://download.pytorch.org/models/inception_v3_google-1a9a5a14.pth',
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
     'resnet34': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
@@ -77,9 +77,11 @@ for model_name in __all__:
 #         'num_classes': 1000
 #     }
 
+
 def load_pretrained(model, num_classes, settings):
     assert num_classes == settings['num_classes'], \
-        "num_classes should be {}, but is {}".format(settings['num_classes'], num_classes)
+        "num_classes should be {}, but is {}".format(
+            settings['num_classes'], num_classes)
     model.load_state_dict(model_zoo.load_url(settings['url']))
     model.input_space = settings['input_space']
     model.input_size = settings['input_size']
@@ -164,6 +166,7 @@ def resnet18(num_classes=1000, pretrained='imagenet'):
         model = load_pretrained(model, num_classes, settings)
     return model
 
+
 def resnet34(num_classes=1000, pretrained='imagenet'):
     """Constructs a ResNet-34 model.
     """
@@ -172,6 +175,7 @@ def resnet34(num_classes=1000, pretrained='imagenet'):
         settings = pretrained_settings['resnet34'][pretrained]
         model = load_pretrained(model, num_classes, settings)
     return model
+
 
 def resnet50(num_classes=1000, pretrained='imagenet'):
     """Constructs a ResNet-50 model.
@@ -182,6 +186,7 @@ def resnet50(num_classes=1000, pretrained='imagenet'):
         model = load_pretrained(model, num_classes, settings)
     return model
 
+
 def resnet101(num_classes=1000, pretrained='imagenet'):
     """Constructs a ResNet-101 model.
     """
@@ -190,6 +195,7 @@ def resnet101(num_classes=1000, pretrained='imagenet'):
         settings = pretrained_settings['resnet101'][pretrained]
         model = load_pretrained(model, num_classes, settings)
     return model
+
 
 def resnet152(num_classes=1000, pretrained='imagenet'):
     """Constructs a ResNet-152 model.
@@ -211,6 +217,7 @@ def squeezenet1_0(num_classes=1000, pretrained='imagenet'):
         settings = pretrained_settings['squeezenet1_0'][pretrained]
         model = load_pretrained(model, num_classes, settings)
     return model
+
 
 def squeezenet1_1(num_classes=1000, pretrained='imagenet'):
     r"""SqueezeNet 1.1 model from the `official SqueezeNet repo

@@ -1,4 +1,5 @@
 import argparse
+from operator import le
 import os
 import random
 import numpy as np
@@ -67,6 +68,16 @@ try:
 except OSError:
     pass
 
+try:
+    os.makedirs(f'{opt.outf}/train')
+except OSError:
+    pass
+
+try:
+    os.makedirs(f'{opt.outf}/test')
+except OSError:
+    pass
+
 if opt.manualSeed is None:
     opt.manualSeed = random.randint(1, 10000)
 print("Random Seed: ", opt.manualSeed)
@@ -99,6 +110,12 @@ assert train_size + \
 print("=> creating model ")
 netClassifier = pretrainedmodels.__dict__[opt.netClassifier](
     num_classes=1000, pretrained='imagenet')
+
+netClassifiers_names = ['inceptionv3', 'resnet50', 'vgg16', 'vgg19']
+
+netClassifiers = [pretrainedmodels.__dict__[name](
+    num_classes=1000, pretrained='imagenet') for name in netClassifiers_names]
+
 if opt.cuda:
     netClassifier.to(device)
     # netClassifier.cuda()
@@ -144,7 +161,8 @@ min_out, max_out = np.min((min_in-mean)/std), np.max((max_in-mean)/std)
 
 
 def train(epoch, patch, patch_shape):
-    netClassifier.eval()
+    for i in range(len(netClassifiers)):
+        netClassifiers[i].eval()
     success = 0
     total = 0
     recover_time = 0
@@ -153,68 +171,78 @@ def train(epoch, patch, patch_shape):
     except OSError:
         pass
     for batch_idx, (data, labels) in enumerate(train_loader):
-        if opt.cuda:
-            data = data.cuda()
-            labels = labels.cuda()
-        data, labels = Variable(data), Variable(labels)
+        for i, classifier in enumerate(netClassifiers):
+            if opt.cuda:
+                data = data.cuda()
+                labels = labels.cuda()
+            data, labels = Variable(data), Variable(labels)
 
-        prediction = netClassifier(data)
+            prediction = classifier(data)
 
-        # only computer adversarial examples on examples that are originally classified correctly
-        if prediction.data.max(1)[1][0] != labels.data[0]:
-            continue
+            # only computer adversarial examples on examples that are originally classified correctly
+            if prediction.data.max(1)[1][0] != labels.data[0]:
+                print(
+                    f'{netClassifiers_names[i]} predicted incorectly {prediction.data.max(1)[1][0]} != {labels.data[0]}')
+                continue
 
-        total += 1
+            total += 1
 
-        # transform path
-        data_shape = data.data.cpu().numpy().shape
-        if patch_type == 'circle':
-            patch, mask, patch_shape = circle_transform(
-                patch, data_shape, patch_shape, image_size)
-        elif patch_type == 'square':
-            patch, mask = square_transform(
-                patch, data_shape, patch_shape, image_size)
-        patch, mask = torch.FloatTensor(patch), torch.FloatTensor(mask)
-        if opt.cuda:
-            patch, mask = patch.to(device), mask.to(device)
-            #patch, mask = patch.cuda(), mask.cuda()
-        patch, mask = Variable(patch), Variable(mask)
+            # transform path
+            data_shape = data.data.cpu().numpy().shape
+            if patch_type == 'circle':
+                patch, mask, patch_shape = circle_transform(
+                    patch, data_shape, patch_shape, image_size)
+            elif patch_type == 'square':
+                patch, mask = square_transform(
+                    patch, data_shape, patch_shape, image_size)
+            patch, mask = torch.FloatTensor(patch), torch.FloatTensor(mask)
+            if opt.cuda:
+                patch, mask = patch.to(device), mask.to(device)
+                #patch, mask = patch.cuda(), mask.cuda()
+            patch, mask = Variable(patch), Variable(mask)
 
-        adv_x, mask, patch = attack(data, patch, mask)
+            adv_x, mask, patch = attack(data, patch, mask, classifier, i)
 
-        adv_label = netClassifier(adv_x).data.max(1)[1][0]
-        ori_label = labels.data[0]
+            adv_label = classifier(adv_x).data.max(1)[1][0]
+            ori_label = labels.data[0]
 
-        if adv_label == target:
-            success += 1
+            if adv_label == target:
+                success += 1
 
-            if plot_all == 1:
-                # plot source image
-                vutils.save_image(data.data, "./%s/train/%d/%d_%d_original.png" %
-                                  (opt.outf, epoch, batch_idx, ori_label), normalize=True)
+                if plot_all == 1:
+                    # plot source image
+                    vutils.save_image(data.data, "./%s/train/%d/%d_%d_original_%s.png" %
+                                      (opt.outf, epoch, batch_idx, ori_label, netClassifiers_names[i]), normalize=True)
 
-                # plot adversarial image
-                vutils.save_image(adv_x.data, "./%s/train/%d/%d_%d_adversarial.png" %
-                                  (opt.outf, epoch, batch_idx, adv_label), normalize=True)
+                    # plot adversarial image
+                    vutils.save_image(adv_x.data, "./%s/train/%d/%d_%d_adversarial_%s.png" %
+                                      (opt.outf, epoch, batch_idx, adv_label, netClassifiers_names[i]), normalize=True)
 
-        masked_patch = torch.mul(mask, patch)
-        patch = masked_patch.data.cpu().numpy()
-        new_patch = np.zeros(patch_shape)
-        for i in range(new_patch.shape[0]):
-            for j in range(new_patch.shape[1]):
-                new_patch[i][j] = submatrix(patch[i][j])
+            masked_patch = torch.mul(mask, patch)
+            patch = masked_patch.data.cpu().numpy()
+            new_patch = np.zeros(patch_shape)
+            for i in range(new_patch.shape[0]):
+                for j in range(new_patch.shape[1]):
+                    new_patch[i][j] = submatrix(patch[i][j])
 
-        patch = new_patch
+            patch = new_patch
 
         # log to file
+        keeper = False
+        if total == 0:
+            keeper = True
+            total = 1
         progress_bar(batch_idx, len(train_loader),
                      "Train Patch Success: {:.3f}".format(success/total))
+        if keeper:
+            total = 0
 
     return patch
 
 
 def test(epoch, patch, patch_shape):
-    netClassifier.eval()
+    for i in range(len(netClassifiers)):
+        netClassifiers[i].eval()
     success = 0
     total = 0
     try:
@@ -222,67 +250,68 @@ def test(epoch, patch, patch_shape):
     except OSError:
         pass
     for batch_idx, (data, labels) in enumerate(test_loader):
-        if opt.cuda:
-            data = data.to(device)
-            labels = labels.to(device)
-            #data = data.cuda()
-            #labels = labels.cuda()
-        data, labels = Variable(data), Variable(labels)
+        for i, classifier in enumerate(netClassifiers):
+            if opt.cuda:
+                data = data.to(device)
+                labels = labels.to(device)
+                #data = data.cuda()
+                #labels = labels.cuda()
+            data, labels = Variable(data), Variable(labels)
 
-        prediction = netClassifier(data)
+            prediction = classifier(data)
 
-        # only computer adversarial examples on examples that are originally classified correctly
-        if prediction.data.max(1)[1][0] != labels.data[0]:
-            continue
+            # only computer adversarial examples on examples that are originally classified correctly
+            if prediction.data.max(1)[1][0] != labels.data[0]:
+                continue
 
-        total += 1
+            total += 1
 
-        # transform path
-        data_shape = data.data.cpu().numpy().shape
-        if patch_type == 'circle':
-            patch, mask, patch_shape = circle_transform(
-                patch, data_shape, patch_shape, image_size)
-        elif patch_type == 'square':
-            patch, mask = square_transform(
-                patch, data_shape, patch_shape, image_size)
-        patch, mask = torch.FloatTensor(patch), torch.FloatTensor(mask)
-        if opt.cuda:
-            patch, mask = patch.to(device), mask.to(device)
-            #patch, mask = patch.cuda(), mask.cuda()
-        patch, mask = Variable(patch), Variable(mask)
+            # transform path
+            data_shape = data.data.cpu().numpy().shape
+            if patch_type == 'circle':
+                patch, mask, patch_shape = circle_transform(
+                    patch, data_shape, patch_shape, image_size)
+            elif patch_type == 'square':
+                patch, mask = square_transform(
+                    patch, data_shape, patch_shape, image_size)
+            patch, mask = torch.FloatTensor(patch), torch.FloatTensor(mask)
+            if opt.cuda:
+                patch, mask = patch.to(device), mask.to(device)
+                #patch, mask = patch.cuda(), mask.cuda()
+            patch, mask = Variable(patch), Variable(mask)
 
-        adv_x = torch.mul((1-mask), data) + torch.mul(mask, patch)
-        adv_x = torch.clamp(adv_x, min_out, max_out)
+            adv_x = torch.mul((1-mask), data) + torch.mul(mask, patch)
+            adv_x = torch.clamp(adv_x, min_out, max_out)
 
-        adv_label = netClassifier(adv_x).data.max(1)[1][0]
-        ori_label = labels.data[0]
+            adv_label = classifier(adv_x).data.max(1)[1][0]
+            ori_label = labels.data[0]
 
-        if adv_label == target:
-            success += 1
+            if adv_label == target:
+                success += 1
 
-        vutils.save_image(data.data, "./%s/test/%d/%d_%d_original.png" %
-                          (opt.outf, epoch, batch_idx, ori_label), normalize=True)
-        vutils.save_image(adv_x.data, "./%s/test/%d/%d_%d_adversarial.png" %
-                          (opt.outf, epoch, batch_idx, adv_label), normalize=True)
+            vutils.save_image(data.data, "./%s/test/%d/%d_%d_original_%s.png" %
+                              (opt.outf, epoch, batch_idx, ori_label, netClassifiers_names[i]), normalize=True)
+            vutils.save_image(adv_x.data, "./%s/test/%d/%d_%d_adversarial_%s.png" %
+                              (opt.outf, epoch, batch_idx, adv_label, netClassifiers_names[i]), normalize=True)
 
-        masked_patch = torch.mul(mask, patch)
-        patch = masked_patch.data.cpu().numpy()
-        new_patch = np.zeros(patch_shape)
-        for i in range(new_patch.shape[0]):
-            for j in range(new_patch.shape[1]):
-                new_patch[i][j] = submatrix(patch[i][j])
+            masked_patch = torch.mul(mask, patch)
+            patch = masked_patch.data.cpu().numpy()
+            new_patch = np.zeros(patch_shape)
+            for i in range(new_patch.shape[0]):
+                for j in range(new_patch.shape[1]):
+                    new_patch[i][j] = submatrix(patch[i][j])
 
-        patch = new_patch
+            patch = new_patch
 
         # log to file
         progress_bar(batch_idx, len(test_loader),
                      "Test Success: {:.3f}".format(success/total))
 
 
-def attack(x, patch, mask):
-    netClassifier.eval()
+def attack(x, patch, mask, classifier, i):
+    classifier.eval()
 
-    x_out = F.softmax(netClassifier(x))
+    x_out = F.softmax(classifier(x))
     target_prob = x_out.data[0][target]
 
     adv_x = torch.mul((1-mask), x) + torch.mul(mask, patch)
@@ -292,7 +321,7 @@ def attack(x, patch, mask):
     while conf_target > target_prob:
         count += 1
         adv_x = Variable(adv_x.data, requires_grad=True)
-        adv_out = F.log_softmax(netClassifier(adv_x))
+        adv_out = F.log_softmax(classifier(adv_x))
 
         adv_out_probs, adv_out_labels = adv_out.max(1)
 
@@ -308,13 +337,15 @@ def attack(x, patch, mask):
         adv_x = torch.mul((1-mask), x) + torch.mul(mask, patch)
         adv_x = torch.clamp(adv_x, min_out, max_out)
 
-        out = F.softmax(netClassifier(adv_x))
+        out = F.softmax(classifier(adv_x))
         target_prob = out.data[0][target]
         #y_argmax_prob = out.data.max(1)[0][0]
 
         #print(count, conf_target, target_prob, y_argmax_prob)
 
         if count >= opt.max_count:
+            print(
+                f'{netClassifiers_names[i]} over max count')
             break
 
     return adv_x, mask, patch
