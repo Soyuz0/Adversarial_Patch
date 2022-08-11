@@ -1,3 +1,4 @@
+import pretrainedmodels
 import argparse
 
 from PIL import Image
@@ -6,18 +7,17 @@ import torchvision.transforms as transforms
 
 import sys
 sys.path.append('../pretrained-models.pytorch')
-import pretrainedmodels
 
 model_names = sorted(name for name in pretrainedmodels.__dict__
-    if not name.startswith("__")
-    and callable(pretrainedmodels.__dict__[name]))
+                     if not name.startswith("__")
+                     and callable(pretrainedmodels.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('--arch', '-a', metavar='ARCH', default='fbresnet152',
+parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
                     choices=model_names,
                     help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: fbresnet152)')
+                    ' | '.join(model_names) +
+                    ' (default: fbresnet152)')
 args = parser.parse_args()
 
 # Load Model
@@ -26,13 +26,13 @@ model = pretrainedmodels.__dict__[args.arch](num_classes=1000,
 model.eval()
 
 # Load One Input Image
-path_img = 'data/ILSVRC2012_val_00002147.JPEG'
+path_img = 'data/933_788_adversarial.png'
 with open(path_img, 'rb') as f:
     with Image.open(f) as img:
         input_data = img.convert(model.input_space)
 
 tf = transforms.Compose([
-    transforms.Scale(round(max(model.input_size)*1.143)),
+    transforms.Resize(round(max(model.input_size)*1.143)),
     transforms.CenterCrop(max(model.input_size)),
     transforms.ToTensor(),
     transforms.Normalize(mean=model.mean,
@@ -40,10 +40,9 @@ tf = transforms.Compose([
 ])
 
 input_data = tf(input_data)          # 3x400x225 -> 3x299x299
-input_data = input_data.unsqueeze(0) # 3x299x299 -> 1x3x299x299
+input_data = input_data.unsqueeze(0)  # 3x299x299 -> 1x3x299x299
 input = torch.autograd.Variable(input_data)
-print(input)
-exit()
+
 # Load Imagenet Synsets
 with open('data/imagenet_synsets.txt', 'r') as f:
     synsets = f.readlines()
@@ -52,7 +51,7 @@ with open('data/imagenet_synsets.txt', 'r') as f:
 # sysnets[0] == background
 synsets = [x.strip() for x in synsets]
 splits = [line.split(' ') for line in synsets]
-key_to_classname = {spl[0]:' '.join(spl[1:]) for spl in splits}
+key_to_classname = {spl[0]: ' '.join(spl[1:]) for spl in splits}
 
 with open('data/imagenet_classes.txt', 'r') as f:
     class_id_to_key = f.readlines()
@@ -60,10 +59,11 @@ with open('data/imagenet_classes.txt', 'r') as f:
 class_id_to_key = [x.strip() for x in class_id_to_key]
 
 # Make predictions
-output = model(input) # size(1, 1000)
+output = model(input)  # size(1, 1000)
 max, argmax = output.data.squeeze().max(0)
-class_id = argmax[0]
+print(argmax)
+class_id = argmax.item()
 class_key = class_id_to_key[class_id]
 classname = key_to_classname[class_key]
 
-print(path_img, 'is a', classname) 
+print(path_img, 'is a', classname)

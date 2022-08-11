@@ -1,5 +1,4 @@
 import argparse
-from operator import le
 import os
 import random
 import numpy as np
